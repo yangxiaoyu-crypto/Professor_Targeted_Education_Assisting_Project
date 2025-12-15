@@ -16,9 +16,12 @@ import {
   Slider,
   Collapse,
 } from 'antd';
-import { CheckCircleOutlined, RocketOutlined, TableOutlined } from '@ant-design/icons';
+import { CheckCircleOutlined, RocketOutlined, TableOutlined, HistoryOutlined, FileTextOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { llmService } from '../services/api';
+import { knowledgeService } from '../services/knowledgeApi';
+import HistoryDrawer from '../components/HistoryDrawer';
+import { storage } from '../utils/storage';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -30,13 +33,27 @@ const StudentAssessment = () => {
   const [loading, setLoading] = useState(false);
   const [generatedAssessment, setGeneratedAssessment] = useState('');
   const [assessmentType, setAssessmentType] = useState('comprehensive');
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [knowledgeSources, setKnowledgeSources] = useState([]);
 
   const formativeWeight = Form.useWatch('formativeWeight', form) || 40;
 
-  const generatePrompt = (values) => {
+  const generatePrompt = (values, knowledgeResults = []) => {
     const summativeWeight = 100 - formativeWeight;
+    
+    let prompt = '';
+    
+    // 如果有知识库结果，添加参考资料
+    if (knowledgeResults.length > 0) {
+      prompt += `# 📚 参考资料\n以下是从知识库中检索到的相关教学资料，请参考其中的理念和方法（但不要照搬）：\n\n`;
+      knowledgeResults.forEach((ref, idx) => {
+        const content = ref.content.substring(0, 300);
+        prompt += `## 参考资料 ${idx + 1}：${ref.source}\n${content}...\n\n`;
+      });
+      prompt += `---\n\n`;
+    }
 
-    return `请作为教学评价专家，为以下课程设计科学、公平的学生评估方案：
+    prompt += `请作为教学评价专家，为以下课程设计科学、公平的学生评估方案：
 
 【课程信息】
 课程名称：${values.courseName}
@@ -117,23 +134,43 @@ ${values.specialConsiderations || '无'}
 3. 兼顾过程和结果
 4. 公平、透明、可操作
 5. 有助于学生学习和教师改进教学`;
+    return prompt;
   };
 
   const handleGenerate = async (values) => {
     setLoading(true);
     setGeneratedAssessment('');
+    setKnowledgeSources([]);
 
     try {
-      const prompt = generatePrompt(values);
+      // 1. 先检索知识库
+      let knowledgeResults = [];
+      try {
+        const searchQuery = `${values.courseName} 评估 评价 学生评估方案 形成性评价`;
+        knowledgeResults = await knowledgeService.search({
+          query: searchQuery,
+          topK: 3
+        });
+        
+        if (knowledgeResults.length > 0) {
+          setKnowledgeSources(knowledgeResults);
+          message.info(`已从知识库检索到 ${knowledgeResults.length} 条相关参考资料`);
+        }
+      } catch (error) {
+        console.warn('知识库检索失败，将不使用参考资料:', error);
+      }
+
+      // 2. 生成增强的prompt
+      const prompt = generatePrompt(values, knowledgeResults);
       let content = '';
 
       await llmService.streamGenerate(
         prompt,
         {
           systemPrompt:
-            '你是一位教学评价专家，精通形成性评价和总结性评价理论，熟悉各种评价工具和量表的设计。你的任务是帮助教师设计科学、公平、有效的学生评估方案。',
+            '你是一位教学评价专家，精通形成性评价（Black & Wiliam）和总结性评价理论，擅长设计评价量表（Rubric）和多元评价体系。你坚持评价的公平性、透明性和发展性原则，能够设计出既科学严谨又易于实施的评估方案。你的方案注重评价与教学的一致性，促进学生学习和教师改进。',
           temperature: 0.6,
-          maxTokens: 3500,
+          maxTokens: 5000,
         },
         (chunk) => {
           content += chunk;
@@ -142,12 +179,26 @@ ${values.specialConsiderations || '无'}
       );
 
       message.success('评估方案生成成功！');
+      
+      // 保存到历史记录
+      storage.saveHistory('assessment', {
+        title: values.courseName,
+        content: content,
+        formData: values,
+      });
     } catch (error) {
       message.error('生成失败，请稍后重试');
       console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 加载历史记录到表单
+  const handleLoadHistory = (item) => {
+    form.setFieldsValue(item.formData);
+    setGeneratedAssessment(item.content);
+    setAssessmentType(item.formData.assessmentType || 'comprehensive');
   };
 
   return (
@@ -280,16 +331,26 @@ ${values.specialConsiderations || '无'}
               </Form.Item>
 
               <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={loading}
-                  icon={<RocketOutlined />}
-                  size="large"
-                  block
-                >
-                  {loading ? '正在生成...' : '生成评估方案'}
-                </Button>
+                <Space style={{ width: '100%' }} direction="vertical">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    icon={<RocketOutlined />}
+                    size="large"
+                    block
+                  >
+                    {loading ? '正在生成...' : '生成评估方案'}
+                  </Button>
+                  <Button
+                    icon={<HistoryOutlined />}
+                    onClick={() => setHistoryVisible(true)}
+                    size="large"
+                    block
+                  >
+                    查看历史记录
+                  </Button>
+                </Space>
               </Form.Item>
             </Form>
           </Card>
@@ -352,17 +413,43 @@ ${values.specialConsiderations || '无'}
             )}
 
             {generatedAssessment && (
-              <div
-                style={{
-                  background: '#fafafa',
-                  padding: 24,
-                  borderRadius: 8,
-                  maxHeight: 700,
-                  overflowY: 'auto',
-                }}
-              >
-                <ReactMarkdown>{generatedAssessment}</ReactMarkdown>
-              </div>
+              <>
+                <div
+                  style={{
+                    background: '#fafafa',
+                    padding: 24,
+                    borderRadius: 8,
+                    maxHeight: 700,
+                    overflowY: 'auto',
+                  }}
+                >
+                  <ReactMarkdown>{generatedAssessment}</ReactMarkdown>
+                </div>
+                
+                {/* 显示参考来源 */}
+                {knowledgeSources.length > 0 && (
+                  <Card 
+                    title="📚 参考来源" 
+                    size="small" 
+                    style={{ marginTop: 16 }}
+                  >
+                    <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                      本次生成参考了以下知识库资料：
+                    </Paragraph>
+                    <Space wrap>
+                      {knowledgeSources.map((source, idx) => (
+                        <Tag 
+                          key={idx} 
+                          icon={<FileTextOutlined />}
+                          color="blue"
+                        >
+                          {source.source}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </Card>
+                )}
+              </>
             )}
 
             {!loading && !generatedAssessment && (
@@ -414,6 +501,14 @@ ${values.specialConsiderations || '无'}
           </Card>
         </Col>
       </Row>
+
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        type="assessment"
+        onLoad={handleLoadHistory}
+      />
     </div>
   );
 };

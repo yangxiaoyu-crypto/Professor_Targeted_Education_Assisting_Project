@@ -23,9 +23,12 @@ import {
   TrophyOutlined,
   CheckCircleOutlined,
   WarningOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { llmService } from '../services/api';
+import HistoryDrawer from '../components/HistoryDrawer';
+import { storage } from '../utils/storage';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -35,6 +38,7 @@ const CourseComparison = () => {
   const [loading, setLoading] = useState(false);
   const [comparisonResult, setComparisonResult] = useState(null);
   const [analysisText, setAnalysisText] = useState('');
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const evaluationDimensions = [
     { key: 'objectives', name: '学习目标', weight: 20 },
@@ -154,9 +158,9 @@ ${values.syllabusB}
         prompt,
         {
           systemPrompt:
-            '你是一位资深的教学设计评审专家，精通各种教学理论和评价标准。你的任务是客观、专业地对比分析不同的教学设计方案，给出建设性的意见和建议。',
+            '你是一位拥有15年经验的教学设计评审专家，曾评审过数百份教学方案。你精通泰勒原理、逆向设计等教学理论，能够从目标、内容、方法、评价等多维度进行专业分析。你的评价客观公正、具体明确，既指出问题也提供解决方案。你善于发现方案的亮点和不足，给出的建议具有很强的可操作性。',
           temperature: 0.6,
-          maxTokens: 4000,
+          maxTokens: 5500,
         },
         (chunk) => {
           content += chunk;
@@ -172,12 +176,30 @@ ${values.syllabusB}
       });
 
       message.success('对比分析完成！');
+      
+      // 保存到历史记录
+      storage.saveHistory('comparison', {
+        title: `${values.nameA} vs ${values.nameB}`,
+        content: content,
+        formData: values,
+      });
     } catch (error) {
       message.error('分析失败，请稍后重试');
       console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 加载历史记录到表单
+  const handleLoadHistory = (item) => {
+    form.setFieldsValue(item.formData);
+    setAnalysisText(item.content);
+    setComparisonResult({
+      analysis: item.content,
+      scoreA: 85, // 示例分数，实际应从AI返回中解析
+      scoreB: 88,
+    });
   };
 
   const columns = [
@@ -320,16 +342,26 @@ ${values.syllabusB}
               </Form.Item>
 
               <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={loading}
-                  icon={<RocketOutlined />}
-                  size="large"
-                  block
-                >
-                  {loading ? '正在分析...' : '开始对比分析'}
-                </Button>
+                <Space style={{ width: '100%' }} direction="vertical">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    icon={<RocketOutlined />}
+                    size="large"
+                    block
+                  >
+                    {loading ? '正在分析...' : '开始对比分析'}
+                  </Button>
+                  <Button
+                    icon={<HistoryOutlined />}
+                    onClick={() => setHistoryVisible(true)}
+                    size="large"
+                    block
+                  >
+                    查看历史记录
+                  </Button>
+                </Space>
               </Form.Item>
             </Form>
           </Card>
@@ -438,6 +470,14 @@ ${values.syllabusB}
           )}
         </Col>
       </Row>
+
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        type="comparison"
+        onLoad={handleLoadHistory}
+      />
     </div>
   );
 };

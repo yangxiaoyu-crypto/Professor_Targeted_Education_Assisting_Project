@@ -21,9 +21,13 @@ import {
   DownloadOutlined,
   CopyOutlined,
   RocketOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { llmService } from '../services/api';
+import { knowledgeService } from '../services/knowledgeApi';
+import HistoryDrawer from '../components/HistoryDrawer';
+import { storage } from '../utils/storage';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -35,6 +39,8 @@ const SyllabusGenerator = () => {
   const [loading, setLoading] = useState(false);
   const [generatedSyllabus, setGeneratedSyllabus] = useState('');
   const [streamingContent, setStreamingContent] = useState('');
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [knowledgeSources, setKnowledgeSources] = useState([]);
 
   const courseTypes = [
     '理工类课程',
@@ -54,91 +60,129 @@ const SyllabusGenerator = () => {
     '传统讲授',
   ];
 
-  const generatePrompt = (values) => {
-    return `请作为教学设计专家，根据以下信息生成一份完整、规范的课程大纲：
+  const generatePrompt = (values, knowledgeResults = []) => {
+    let prompt = '';
+    
+    // 如果有知识库结果，添加参考资料
+    if (knowledgeResults.length > 0) {
+      prompt += `# 📚 参考资料\n以下是从知识库中检索到的相关教学资料，请参考其中的理念和方法（但不要照搬）：\n\n`;
+      knowledgeResults.forEach((ref, idx) => {
+        const content = ref.content.substring(0, 300);
+        prompt += `## 参考资料 ${idx + 1}：${ref.source}\n${content}...\n\n`;
+      });
+      prompt += `---\n\n`;
+    }
+    
+    prompt += `你是一位资深教学设计专家。请为以下课程设计一份高质量的课程大纲。
 
-【课程基本信息】
-课程名称：${values.courseName}
-课程类型：${values.courseType}
-学时学分：${values.credits}学分，${values.hours}学时
-授课对象：${values.targetStudents}
-先修课程：${values.prerequisites || '无'}
+# 课程信息
+- **课程名称**：${values.courseName}
+- **课程类型**：${values.courseType}
+- **学时学分**：${values.credits}学分，${values.hours}学时
+- **授课对象**：${values.targetStudents}
+- **先修课程**：${values.prerequisites || '无'}
+- **教学模式**：${values.teachingModel}
+${values.courseFeatures ? `- **课程特色**：${values.courseFeatures}` : ''}
 
-【教学理念】
-教学模式：${values.teachingModel}
-课程特色：${values.courseFeatures || ''}
+# 教师构想
+${values.teacherIdeas || '请基于教学设计最佳实践提供专业建议'}
 
-【教师想法】
-${values.teacherIdeas || '请根据教学设计理论提供专业建议'}
+---
 
-请参考以下教学设计理论和框架：
-1. 泰勒原理（Tyler Rationale）- 目标、内容、方法、评价的系统设计
-2. 逆向设计（Understanding by Design）- 从学习结果出发设计课程
-3. 布卢姆教育目标分类学 - 认知、情感、动作技能目标
-4. 加涅九大教学事件 - 引起注意、告知目标、刺激回忆等
-5. 以学习者为中心的教学理念
+# 任务要求
 
-请生成包含以下部分的完整课程大纲：
+请深入思考并生成一份完整的课程大纲，需包含以下核心部分：
 
-## 一、课程概述
-- 课程性质与定位
-- 课程目标（总体目标和具体目标，使用布卢姆分类法）
-- 课程内容简介
+## 1. 课程概述与定位
+- 课程在专业培养体系中的作用
+- 与先修课程和后续课程的衔接
 
-## 二、学习成果（Learning Outcomes）
-- 知识目标（Knowledge）
-- 能力目标（Skills）
-- 素质目标（Attitudes & Values）
-- 课程思政目标
+## 2. 学习成果（Learning Outcomes）
+基于布卢姆分类学，设计分层次的学习目标：
+- **知识维度**：学生将掌握哪些核心概念和原理
+- **能力维度**：学生将具备哪些可迁移的技能
+- **素质维度**：培养哪些职业态度和价值观
+- **思政目标**：如何自然融入价值引领
 
-## 三、教学内容与安排
-（请按周次或章节详细列出）
-- 每周/章节的主题
-- 教学重点与难点
-- 教学方法与活动设计
-- 预习要求与课后作业
+## 3. 教学内容与进度安排
+按周次或模块详细规划（建议${Math.ceil(values.hours / 2)}-${Math.ceil(values.hours / 2) + 2}周）：
+- 每周主题、知识点、重难点
+- 对应的教学活动设计（结合${values.teachingModel}）
+- 课前准备、课堂活动、课后任务
 
-## 四、教学方法与策略
-- 主要教学方法
-- 师生互动设计
-- 参与式学习活动
-- 信息技术应用
+## 4. 教学方法与策略
+结合${values.teachingModel}，具体说明：
+- 如何促进学生主动学习和深度参与
+- 如何运用信息技术增强教学效果
+- 如何设计师生互动和生生协作
 
-## 五、评价与考核
-- 评价方式（形成性评价 + 总结性评价）
-- 评分标准与权重
-- 评价量表设计
-- 反馈机制
+## 5. 评价与考核体系
+设计科学的评价方案：
+- 形成性评价（建议40-60%）：具体方式、频次、权重
+- 总结性评价（建议40-60%）：考核形式、内容分布
+- 评价标准（Rubric）示例
+- 反馈机制和改进循环
 
-## 六、教学资源
-- 教材与参考书
-- 在线资源
-- 教学工具与平台
+## 6. 教学资源配置
+- 必读教材和推荐参考书
+- 在线学习资源和工具
+- 实验/实践环境需求
 
-## 七、课程思政融入
-- 思政元素与专业知识的融合点
-- 价值引领的具体实施
+## 7. 课程特色与创新点
+- 本课程的独特设计理念
+- 与传统教学的差异化优势
 
-请确保大纲专业、规范，符合高等教育教学要求，同时体现创新性和实用性。`;
+---
+
+# 设计原则
+1. **对齐性**：目标-内容-方法-评价四位一体
+2. **学生中心**：关注学习体验和学习成果
+3. **可操作性**：具体、清晰、可执行
+4. **创新性**：体现现代教学理念和技术应用
+5. **思政融入**：价值引领润物细无声
+
+请基于泰勒原理、逆向设计（UbD）和加涅教学事件理论，生成一份专业、完整、可直接使用的课程大纲。`;
+    
+    return prompt;
   };
 
   const handleGenerate = async (values) => {
     setLoading(true);
     setGeneratedSyllabus('');
     setStreamingContent('');
+    setKnowledgeSources([]);
 
     try {
-      const prompt = generatePrompt(values);
+      // 1. 先检索知识库
+      let knowledgeResults = [];
+      try {
+        const searchQuery = `${values.courseName} ${values.teachingModel} 课程设计 教学大纲`;
+        knowledgeResults = await knowledgeService.search({
+          query: searchQuery,
+          topK: 3
+        });
+        
+        if (knowledgeResults.length > 0) {
+          setKnowledgeSources(knowledgeResults);
+          message.info(`已从知识库检索到 ${knowledgeResults.length} 条相关参考资料`);
+        }
+      } catch (error) {
+        console.warn('知识库检索失败，将不使用参考资料:', error);
+        // 知识库检索失败不影响主流程
+      }
 
-      // 使用流式生成
+      // 2. 生成增强的prompt
+      const prompt = generatePrompt(values, knowledgeResults);
+
+      // 3. 使用流式生成
       let fullContent = '';
       await llmService.streamGenerate(
         prompt,
         {
           systemPrompt:
-            '你是一位资深的教学设计专家，熟悉各种教学理论和教学方法。你的任务是帮助大学教授设计高质量的课程大纲，使其符合教学规范，同时具有创新性和可操作性。',
-          temperature: 0.7,
-          maxTokens: 4000,
+            '你是一位拥有20年教学设计经验的专家，精通泰勒原理、逆向设计（UbD）、布卢姆分类学等教学理论。你擅长将理论转化为可操作的教学方案，注重目标-内容-方法-评价的系统对齐。你的设计既专业规范又富有创新性，深受教师欢迎。要求：输出Markdown格式，禁止输出任何HTML标签（如<br>、<div>、<p>等），换行用回车符表示。',
+          temperature: 0.65,
+          maxTokens: 6000,
         },
         (chunk) => {
           fullContent += chunk;
@@ -148,6 +192,13 @@ ${values.teacherIdeas || '请根据教学设计理论提供专业建议'}
 
       setGeneratedSyllabus(fullContent);
       message.success('课程大纲生成成功！');
+      
+      // 保存到历史记录
+      storage.saveHistory('syllabus', {
+        title: values.courseName,
+        content: fullContent,
+        formData: values,
+      });
     } catch (error) {
       console.error('生成失败:', error);
       message.error('生成失败，请检查网络连接或稍后重试');
@@ -174,11 +225,20 @@ ${values.teacherIdeas || '请根据教学设计理论提供专业建议'}
     message.success('下载成功');
   };
 
+  // 加载历史记录到表单
+  const handleLoadHistory = (item) => {
+    // 填充表单数据
+    form.setFieldsValue(item.formData);
+    // 显示之前生成的内容
+    setGeneratedSyllabus(item.content);
+    setStreamingContent('');
+  };
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
         <Title level={2}>
-          <FileTextOutlined /> 课程大纲智能生成
+          <FileTextOutlined /> 快速生成教学大纲
         </Title>
         <Paragraph>
           基于教学设计理论（泰勒原理、逆向设计、布卢姆分类等），智能生成规范的课程大纲。
@@ -287,16 +347,26 @@ ${values.teacherIdeas || '请根据教学设计理论提供专业建议'}
               </Form.Item>
 
               <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={loading}
-                  icon={<RocketOutlined />}
-                  size="large"
-                  block
-                >
-                  {loading ? '正在生成中...' : '生成课程大纲'}
-                </Button>
+                <Space style={{ width: '100%' }} direction="vertical">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    icon={<RocketOutlined />}
+                    size="large"
+                    block
+                  >
+                    {loading ? '正在生成中...' : '生成课程大纲'}
+                  </Button>
+                  <Button
+                    icon={<HistoryOutlined />}
+                    onClick={() => setHistoryVisible(true)}
+                    size="large"
+                    block
+                  >
+                    查看历史记录
+                  </Button>
+                </Space>
               </Form.Item>
             </Form>
           </Card>
@@ -351,17 +421,43 @@ ${values.teacherIdeas || '请根据教学设计理论提供专业建议'}
             )}
 
             {(streamingContent || generatedSyllabus) && (
-              <div
-                style={{
-                  background: '#fafafa',
-                  padding: 24,
-                  borderRadius: 8,
-                  maxHeight: '800px',
-                  overflowY: 'auto',
-                }}
-              >
-                <ReactMarkdown>{streamingContent || generatedSyllabus}</ReactMarkdown>
-              </div>
+              <>
+                <div
+                  style={{
+                    background: '#fafafa',
+                    padding: 24,
+                    borderRadius: 8,
+                    maxHeight: '800px',
+                    overflowY: 'auto',
+                  }}
+                >
+                  <ReactMarkdown>{streamingContent || generatedSyllabus}</ReactMarkdown>
+                </div>
+                
+                {/* 显示参考来源 */}
+                {knowledgeSources.length > 0 && (
+                  <Card 
+                    title="📚 参考来源" 
+                    size="small" 
+                    style={{ marginTop: 16 }}
+                  >
+                    <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                      本次生成参考了以下知识库资料：
+                    </Paragraph>
+                    <Space wrap>
+                      {knowledgeSources.map((source, idx) => (
+                        <Tag 
+                          key={idx} 
+                          icon={<FileTextOutlined />}
+                          color="blue"
+                        >
+                          {source.source}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </Card>
+                )}
+              </>
             )}
 
             {!loading && !generatedSyllabus && !streamingContent && (
@@ -379,6 +475,14 @@ ${values.teacherIdeas || '请根据教学设计理论提供专业建议'}
           </Card>
         </Col>
       </Row>
+
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        type="syllabus"
+        onLoad={handleLoadHistory}
+      />
     </div>
   );
 };

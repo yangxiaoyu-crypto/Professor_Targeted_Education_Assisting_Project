@@ -8,6 +8,16 @@ export default defineConfig({
     port: 3000,
     host: true,
     proxy: {
+      '/api/knowledge': {
+        target: 'http://localhost:5001',
+        changeOrigin: true,
+        rewrite: (path) => path
+      },
+      '/api/auth': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
+      },
       '/api': {
         target: 'http://10.102.32.223:8080',
         changeOrigin: true,

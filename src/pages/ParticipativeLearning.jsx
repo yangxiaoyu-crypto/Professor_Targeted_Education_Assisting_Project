@@ -22,9 +22,12 @@ import {
   ProjectOutlined,
   RocketOutlined,
   CheckCircleOutlined,
+  HistoryOutlined,
 } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { llmService } from '../services/api';
+import HistoryDrawer from '../components/HistoryDrawer';
+import { storage } from '../utils/storage';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -37,6 +40,7 @@ const ParticipativeLearning = () => {
   const [loading, setLoading] = useState(false);
   const [generatedPlan, setGeneratedPlan] = useState('');
   const [form] = Form.useForm();
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const learningMethods = [
     {
@@ -184,38 +188,78 @@ const ParticipativeLearning = () => {
     setLoading(true);
     setGeneratedPlan('');
 
-    const prompt = `请作为教学设计专家，基于${selectedMethod.title}，为以下课程设计详细的教学活动方案：
+    const prompt = `你是${selectedMethod.title}的教学设计专家。请为以下课程设计一份详细、可直接实施的教学方案。
 
-【课程信息】
-课程主题：${values.topic}
-授课对象：${values.students}
-课时时长：${values.duration}分钟
-教学目标：${values.objectives}
+# 课程信息
+- **主题**：${values.topic}
+- **对象**：${values.students}
+- **时长**：${values.duration}分钟
+- **目标**：${values.objectives}
+- **模式**：${selectedMethod.title}
 
-【设计要求】
-1. 严格按照${selectedMethod.title}的理论框架设计
-2. 每个环节要有明确的时间分配
-3. 提供具体的活动内容和教师话术示例
-4. 设计学生参与活动的具体形式
-5. 给出评价和反馈的方法
-6. 考虑可能遇到的问题及应对策略
+---
 
-请生成完整的教学活动方案，包括：
-- 教学流程（分阶段详细描述）
-- 每个阶段的时间安排
-- 教师活动和学生活动
-- 所需教学资源和工具
-- 评价方式和标准
-- 注意事项和tips`;
+# 任务要求
+
+请严格遵循${selectedMethod.title}的理论框架，设计一份完整的${values.duration}分钟课堂教学方案。
+
+## 输出结构
+
+### 1. 教学流程设计
+按照${selectedMethod.title}的各个环节，详细设计：
+
+对每个环节，必须包含：
+- **环节名称与时间**（具体到分钟）
+- **教学目的**：该环节要达成什么
+- **教师活动**：教师做什么，怎么做（包含具体话术示例）
+- **学生活动**：学生做什么，如何组织
+- **互动形式**：师生互动、生生互动的具体方式
+- **设计意图**：为什么这样设计
+
+### 2. 时间分配表
+以表格形式呈现：
+| 时间 | 环节 | 主要活动 | 重点 |
+
+### 3. 教学资源清单
+- 教学材料（PPT、讲义、案例等）
+- 技术工具（软件、平台、设备等）
+- 物理资源（教室布置、分组安排等）
+
+### 4. 学生参与评仰
+设计如何评估学生的参与和学习效果：
+- 过程性评价：课堂观察、提问回答等
+- 总结性评价：作品、成果展示等
+- 评价标准（Rubric）
+
+### 5. 常见问题与应对
+列出3-5个可能出现的问题及解决方案：
+- 问题场景
+- 应对策略
+- 预防措施
+
+### 6. 教学反思与改进
+- 课后如何收集反馈
+- 如何根据实施情况调整
+
+---
+
+# 质量标准
+1. 严格遵循${selectedMethod.title}的核心原则和流程
+2. 时间分配合理，总计${values.duration}分钟
+3. 活动设计具体、可操作，避免空洞
+4. 充分体现学生主动参与和深度学习
+5. 提供具体的教师话术和学生活动示例
+
+请生成一份教师可以直接拿去使用的教学方案。`;
 
     try {
       let content = '';
       await llmService.streamGenerate(
         prompt,
         {
-          systemPrompt: `你是一位教学设计专家，精通各种参与式学习方法。你需要提供详细、可操作的教学设计方案。`,
-          temperature: 0.7,
-          maxTokens: 3000,
+          systemPrompt: `你是${selectedMethod.title}的资深实践者，拥有10年以上的教学经验。你精通该模式的理论基础和实施细节，擅长将理论转化为具体的教学活动。你的教学设计方案细致入微，包含具体的教师话术、学生活动指导和时间分配，教师可以直接使用。`,
+          temperature: 0.65,
+          maxTokens: 4500,
         },
         (chunk) => {
           content += chunk;
@@ -223,6 +267,13 @@ const ParticipativeLearning = () => {
         }
       );
       message.success('教学方案生成成功！');
+      
+      // 保存到历史记录
+      storage.saveHistory('participative', {
+        title: `${selectedMethod.title} - ${values.topic}`,
+        content: content,
+        formData: { ...values, methodId: selectedMethod.id, methodTitle: selectedMethod.title },
+      });
     } catch (error) {
       message.error('生成失败，请稍后重试');
       console.error(error);
@@ -231,16 +282,41 @@ const ParticipativeLearning = () => {
     }
   };
 
+  // 加载历史记录到表单
+  const handleLoadHistory = (item) => {
+    // 恢复选中的方法
+    const method = learningMethods.find(m => m.id === item.formData.methodId);
+    if (method) {
+      setSelectedMethod(method);
+      setModalVisible(true);
+      // 填充表单数据
+      form.setFieldsValue(item.formData);
+      // 显示之前生成的内容
+      setGeneratedPlan(item.content);
+    }
+  };
+
   return (
     <div>
       <div style={{ marginBottom: 24 }}>
-        <Title level={2}>
-          <TeamOutlined /> 参与式学习方法
-        </Title>
-        <Paragraph>
-          选择适合您课程的参与式学习方法，AI将帮助您设计具体的教学活动方案。
-          所有方法都基于教育理论和成功实践，旨在提高学生的参与度和学习效果。
-        </Paragraph>
+        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+          <div>
+            <Title level={2}>
+              <TeamOutlined /> 参与式学习方法
+            </Title>
+            <Paragraph>
+              选择适合您课程的参与式学习方法，AI将帮助您设计具体的教学活动方案。
+              所有方法都基于教育理论和成功实践，旨在提高学生的参与度和学习效果。
+            </Paragraph>
+          </div>
+          <Button
+            icon={<HistoryOutlined />}
+            onClick={() => setHistoryVisible(true)}
+            size="large"
+          >
+            查看历史记录
+          </Button>
+        </Space>
       </div>
 
       <Row gutter={[16, 16]}>
@@ -411,6 +487,14 @@ const ParticipativeLearning = () => {
           </div>
         )}
       </Modal>
+
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        type="participative"
+        onLoad={handleLoadHistory}
+      />
     </div>
   );
 };

@@ -28,3 +28,9 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Large database files
+backend/chroma_db/
+backend/__pycache__/
+backend/users.db
+*.pyc
+

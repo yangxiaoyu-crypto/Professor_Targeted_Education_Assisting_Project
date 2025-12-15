@@ -16,9 +16,12 @@ import {
   Tag,
   Collapse,
 } from 'antd';
-import { BulbOutlined, RocketOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { BulbOutlined, RocketOutlined, CheckCircleOutlined, HistoryOutlined, FileTextOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { llmService } from '../services/api';
+import { knowledgeService } from '../services/knowledgeApi';
+import HistoryDrawer from '../components/HistoryDrawer';
+import { storage } from '../utils/storage';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -29,6 +32,8 @@ const LearningObjectives = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [generatedObjectives, setGeneratedObjectives] = useState('');
+  const [historyVisible, setHistoryVisible] = useState(false);
+  const [knowledgeSources, setKnowledgeSources] = useState([]);
 
   // 布卢姆分类学 - 认知领域
   const bloomCognitive = [
@@ -40,75 +45,124 @@ const LearningObjectives = () => {
     { level: '创造', verbs: '设计、构建、规划、制作、发明、产生', color: '#ffd6e7' },
   ];
 
-  const generatePrompt = (values) => {
-    return `请作为教学设计专家，基于布卢姆教育目标分类学和加涅学习结果分类，为以下课程撰写详细的学习目标：
+  const generatePrompt = (values, knowledgeResults = []) => {
+    let prompt = '';
+    
+    // 如果有知识库结果，添加参考资料
+    if (knowledgeResults.length > 0) {
+      prompt += `# 📚 参考资料\n以下是从知识库中检索到的相关教学资料，请参考其中的理念和方法（但不要照搬）：\n\n`;
+      knowledgeResults.forEach((ref, idx) => {
+        const content = ref.content.substring(0, 300);
+        prompt += `## 参考资料 ${idx + 1}：${ref.source}\n${content}...\n\n`;
+      });
+      prompt += `---\n\n`;
+    }
+    
+    prompt += `你是一位学习目标设计专家。请为以下课程撰写清晰、可测量的学习目标。
 
-【课程信息】
-课程名称：${values.courseName}
-课程主题/章节：${values.topic}
-授课对象：${values.students}
-预期认知层次：${values.cognitiveLevel}
+# 课程信息
+- **课程名称**：${values.courseName}
+- **主题/章节**：${values.topic}
+- **授课对象**：${values.students}
+- **目标认知层次**：${values.cognitiveLevel}
 
-【教师想法】
-${values.teacherIdeas || ''}
+${values.teacherIdeas ? `# 教师期望
+${values.teacherIdeas}
+` : ''}
+---
 
-请按照以下框架撰写学习目标：
+# 任务说明
 
-## 一、总体学习目标
-（符合SMART原则：具体Specific、可测量Measurable、可达成Achievable、相关性Relevant、有时限Time-bound）
+请基于布卢姆修订版分类学和加涅学习结果理论，设计符合SMART原则的学习目标。
 
-## 二、分类学习目标
+## 输出结构
 
-### 1. 知识目标（认知领域 - 布卢姆分类）
-根据${values.cognitiveLevel}层次，使用准确的行为动词：
-- [具体目标1]：学生能够...
-- [具体目标2]：学生能够...
-- [具体目标3]：学生能够...
+### 1. 总体学习目标
+用1-2句话概括本次学习的核心成果，确保：
+- **S**pecific：具体明确
+- **M**easurable：可观察、可测量
+- **A**chievable：符合学生水平
+- **R**elevant：与课程内容相关
+- **T**ime-bound：有明确时间范围
 
-### 2. 能力目标（技能领域）
-基于加涅的智慧技能和认知策略：
-- [能力目标1]
-- [能力目标2]
+### 2. 分类学习目标
 
-### 3. 素质目标（情感态度价值观）
-- [素质目标1]
-- [素质目标2]
+#### 2.1 认知目标（基于布卢姆分类）
+针对${values.cognitiveLevel}层次，设计3-5个目标，每个目标必须：
+- 以“学生能够...”开头
+- 使用可观察的行为动词（如：列举、解释、应用、分析、评价、创建）
+- 避免模糊动词（如：了解、知道、熟悉）
 
-## 三、学习成果（Learning Outcomes）
-完成学习后，学生将能够：
-1. [可观察、可测量的成果1]
-2. [可观察、可测量的成果2]
-3. [可观察、可测量的成果3]
+#### 2.2 技能目标（基于加涅理论）
+设计2-3个智慧技能或认知策略目标，强调：
+- 实际操作能力
+- 问题解决能力
+- 可迁移技能
 
-## 四、目标对应的评价方式
-为每个学习目标建议合适的评价方法（测验、作业、项目、展示等）
+#### 2.3 情感态度目标
+设计1-2个目标，关注：
+- 学习兴趣与动机
+- 职业态度与价值观
+- 协作精神与责任感
 
-## 五、教学活动建议
-为实现这些目标，建议采用的教学活动类型
+### 3. 学习成果表述
+用“完成本次学习后，学生将能够：”开头，列出3-5个具体成果。
 
-请确保：
-1. 使用准确的行为动词（避免"了解"、"知道"等模糊动词）
-2. 目标具体、可测量、可观察
-3. 覆盖不同认知层次
-4. 与课程整体目标对齐
-5. 符合学生的认知发展水平`;
+### 4. 目标达成的证据
+为每类目标设计合适的评价方式：
+- 认知目标：测验、问答、作业等
+- 技能目标：项目、实验、案例分析等
+- 情感目标：观察、反思日志、同伴评价等
+
+### 5. 教学活动建议
+推荐3-4种有助于达成目标的教学活动。
+
+---
+
+# 质量标准
+1. 每个目标都必须包含：行为主体 + 行为动词 + 学习内容 + 表现条件/水平
+2. 目标应覆盖不同认知层次，但以${values.cognitiveLevel}为主
+3. 目标之间应有递进关系，从基础到高阶
+4. 所有目标必须可评价、可测量
+
+请生成专业、精准、可直接应用的学习目标。`;
+    return prompt;
   };
 
   const handleGenerate = async (values) => {
     setLoading(true);
     setGeneratedObjectives('');
+    setKnowledgeSources([]);
 
     try {
-      const prompt = generatePrompt(values);
+      // 1. 先检索知识库
+      let knowledgeResults = [];
+      try {
+        const searchQuery = `${values.courseName} ${values.topic} 学习目标 布卢姆分类`;
+        knowledgeResults = await knowledgeService.search({
+          query: searchQuery,
+          topK: 3
+        });
+        
+        if (knowledgeResults.length > 0) {
+          setKnowledgeSources(knowledgeResults);
+          message.info(`已从知识库检索到 ${knowledgeResults.length} 条相关参考资料`);
+        }
+      } catch (error) {
+        console.warn('知识库检索失败，将不使用参考资料:', error);
+      }
+
+      // 2. 生成增强的prompt
+      const prompt = generatePrompt(values, knowledgeResults);
       let content = '';
 
       await llmService.streamGenerate(
         prompt,
         {
           systemPrompt:
-            '你是一位教学设计专家，精通布卢姆教育目标分类学、加涅学习结果分类等理论。你的任务是帮助教师撰写清晰、具体、可测量的学习目标。',
-          temperature: 0.6,
-          maxTokens: 3000,
+            '你是一位学习目标设计专家，精通布卢姆修订版分类学（Anderson & Krathwohl, 2001）和加涅学习结果理论。你擅长将模糊的教学期望转化为精确、可测量的学习目标。你坚持使用可观察的行为动词，确保每个目标都符合SMART原则。你的目标设计既严谨科学又实用易懂。',
+          temperature: 0.55,
+          maxTokens: 4000,
         },
         (chunk) => {
           content += chunk;
@@ -117,12 +171,25 @@ ${values.teacherIdeas || ''}
       );
 
       message.success('学习目标生成成功！');
+      
+      // 保存到历史记录
+      storage.saveHistory('objectives', {
+        title: `${values.courseName} - ${values.topic}`,
+        content: content,
+        formData: values,
+      });
     } catch (error) {
       message.error('生成失败，请稍后重试');
       console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 加载历史记录到表单
+  const handleLoadHistory = (item) => {
+    form.setFieldsValue(item.formData);
+    setGeneratedObjectives(item.content);
   };
 
   const columns = [
@@ -248,16 +315,26 @@ ${values.teacherIdeas || ''}
               </Form.Item>
 
               <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={loading}
-                  icon={<RocketOutlined />}
-                  size="large"
-                  block
-                >
-                  {loading ? '正在生成...' : '生成学习目标'}
-                </Button>
+                <Space style={{ width: '100%' }} direction="vertical">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    icon={<RocketOutlined />}
+                    size="large"
+                    block
+                  >
+                    {loading ? '正在生成...' : '生成学习目标'}
+                  </Button>
+                  <Button
+                    icon={<HistoryOutlined />}
+                    onClick={() => setHistoryVisible(true)}
+                    size="large"
+                    block
+                  >
+                    查看历史记录
+                  </Button>
+                </Space>
               </Form.Item>
             </Form>
           </Card>
@@ -275,17 +352,43 @@ ${values.teacherIdeas || ''}
             )}
 
             {generatedObjectives && (
-              <div
-                style={{
-                  background: '#fafafa',
-                  padding: 24,
-                  borderRadius: 8,
-                  maxHeight: 700,
-                  overflowY: 'auto',
-                }}
-              >
-                <ReactMarkdown>{generatedObjectives}</ReactMarkdown>
-              </div>
+              <>
+                <div
+                  style={{
+                    background: '#fafafa',
+                    padding: 24,
+                    borderRadius: 8,
+                    maxHeight: 700,
+                    overflowY: 'auto',
+                  }}
+                >
+                  <ReactMarkdown>{generatedObjectives}</ReactMarkdown>
+                </div>
+                
+                {/* 显示参考来源 */}
+                {knowledgeSources.length > 0 && (
+                  <Card 
+                    title="📚 参考来源" 
+                    size="small" 
+                    style={{ marginTop: 16 }}
+                  >
+                    <Paragraph type="secondary" style={{ marginBottom: 12 }}>
+                      本次生成参考了以下知识库资料：
+                    </Paragraph>
+                    <Space wrap>
+                      {knowledgeSources.map((source, idx) => (
+                        <Tag 
+                          key={idx} 
+                          icon={<FileTextOutlined />}
+                          color="blue"
+                        >
+                          {source.source}
+                        </Tag>
+                      ))}
+                    </Space>
+                  </Card>
+                )}
+              </>
             )}
 
             {!loading && !generatedObjectives && (
@@ -343,6 +446,14 @@ ${values.teacherIdeas || ''}
           </Card>
         </Col>
       </Row>
+
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        type="objectives"
+        onLoad={handleLoadHistory}
+      />
     </div>
   );
 };

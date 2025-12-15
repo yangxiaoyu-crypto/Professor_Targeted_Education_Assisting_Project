@@ -15,9 +15,11 @@ import {
   Tag,
   Collapse,
 } from 'antd';
-import { HeartOutlined, RocketOutlined } from '@ant-design/icons';
+import { HeartOutlined, RocketOutlined, HistoryOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import { llmService } from '../services/api';
+import HistoryDrawer from '../components/HistoryDrawer';
+import { storage } from '../utils/storage';
 
 const { Title, Paragraph, Text } = Typography;
 const { TextArea } = Input;
@@ -28,6 +30,7 @@ const IdeologicalEducation = () => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [generatedContent, setGeneratedContent] = useState('');
+  const [historyVisible, setHistoryVisible] = useState(false);
 
   const ideologicalElements = [
     { label: '社会主义核心价值观', value: '社会主义核心价值观', color: 'red' },
@@ -157,9 +160,9 @@ ${values.courseFeatures || ''}
         prompt,
         {
           systemPrompt:
-            '你是一位课程思政专家，深刻理解如何将思想政治教育与专业教育有机融合。你的任务是帮助教师设计自然、有效、有深度的课程思政方案，避免生硬和说教，注重价值引领的润物细无声。',
+            '你是一位课程思政专家，深刻理解"立德树人"的教育理念。你擅长挖掘专业知识中的思政元素，将价值引领自然融入教学过程。你反对"两张皮"和生硬说教，倡导润物细无声的教育方式。你的设计既有理论深度又有实践可操作性，能够真正触动学生心灵。',
           temperature: 0.7,
-          maxTokens: 3500,
+          maxTokens: 5000,
         },
         (chunk) => {
           content += chunk;
@@ -168,12 +171,25 @@ ${values.courseFeatures || ''}
       );
 
       message.success('课程思政方案生成成功！');
+      
+      // 保存到历史记录
+      storage.saveHistory('ideological', {
+        title: values.courseName,
+        content: content,
+        formData: values,
+      });
     } catch (error) {
       message.error('生成失败，请稍后重试');
       console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 加载历史记录到表单
+  const handleLoadHistory = (item) => {
+    form.setFieldsValue(item.formData);
+    setGeneratedContent(item.content);
   };
 
   return (
@@ -289,16 +305,26 @@ ${values.courseFeatures || ''}
               </Form.Item>
 
               <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  loading={loading}
-                  icon={<RocketOutlined />}
-                  size="large"
-                  block
-                >
-                  {loading ? '正在生成...' : '生成思政方案'}
-                </Button>
+                <Space style={{ width: '100%' }} direction="vertical">
+                  <Button
+                    type="primary"
+                    htmlType="submit"
+                    loading={loading}
+                    icon={<RocketOutlined />}
+                    size="large"
+                    block
+                  >
+                    {loading ? '正在生成...' : '生成思政方案'}
+                  </Button>
+                  <Button
+                    icon={<HistoryOutlined />}
+                    onClick={() => setHistoryVisible(true)}
+                    size="large"
+                    block
+                  >
+                    查看历史记录
+                  </Button>
+                </Space>
               </Form.Item>
             </Form>
           </Card>
@@ -405,6 +431,14 @@ ${values.courseFeatures || ''}
           </Card>
         </Col>
       </Row>
+
+      {/* 历史记录抽屉 */}
+      <HistoryDrawer
+        visible={historyVisible}
+        onClose={() => setHistoryVisible(false)}
+        type="ideological"
+        onLoad={handleLoadHistory}
+      />
     </div>
   );
 };

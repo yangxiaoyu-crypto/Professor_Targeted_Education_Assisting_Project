@@ -8,14 +8,16 @@ import {
   RocketOutlined,
   BulbOutlined,
 } from '@ant-design/icons';
+import { backgroundDecorations, heroIllustration } from '../assets/illustrations';
+import MascotCharacter from '../components/MascotCharacter';
 
 const { Title, Paragraph, Text } = Typography;
 
-const HomePage = () => {
+const HomePage = ({ onNavigate }) => {
   const features = [
     {
       icon: <FileTextOutlined style={{ fontSize: 40, color: '#1890ff' }} />,
-      title: '课程大纲生成',
+      title: '快速生成教学大纲',
       description: '基于教学设计理论，智能生成规范的课程大纲，支持中英文输出',
       color: '#e6f7ff',
     },
@@ -59,34 +61,93 @@ const HomePage = () => {
   ];
 
   return (
-    <div>
-      {/* 欢迎区域 */}
-      <Card
+    <div style={{ position: 'relative' }}>
+      {/* Hero Banner 区域 */}
+      <div
         style={{
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white',
+          background: backgroundDecorations.gradientBg,
+          borderRadius: 8,
           marginBottom: 24,
-          border: 'none',
+          overflow: 'visible',
+          position: 'relative',
+          minHeight: 400,
         }}
       >
-        <Space direction="vertical" size="large" style={{ width: '100%' }}>
-          <Title level={2} style={{ color: 'white', margin: 0 }}>
-            欢迎使用教学智能助手 🎓
-          </Title>
-          <Paragraph style={{ color: 'white', fontSize: 16, margin: 0 }}>
-            专为大学教授设计的AI教学助手，基于教学设计理论和丰富的教学资源库，
-            帮助您轻松完成课程设计、教学大纲撰写和教学活动规划。
-          </Paragraph>
-          <div>
-            <Button type="primary" size="large" style={{ marginRight: 12 }}>
-              开始创建课程大纲
-            </Button>
-            <Button size="large" style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}>
-              查看使用指南
-            </Button>
-          </div>
-        </Space>
-      </Card>
+        {/* 右侧吉祥物 */}
+        <div style={{ position: 'absolute', top: -20, right: -40, zIndex: 10, width: '120px', height: '120px' }}>
+          <MascotCharacter 
+            state="welcome" 
+            position="topRight"
+            size="normal"
+            interactive={true}
+            removeBackground={true}
+            showDialogue={false}
+          />
+        </div>
+        {/* 背景装饰 */}
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            width: '50%',
+            height: '100%',
+            backgroundImage: backgroundDecorations.cloudPattern,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
+        />
+
+        {/* 内容区域 */}
+        <Row style={{ position: 'relative', zIndex: 1, height: '100%' }}>
+          <Col xs={24} sm={24} md={12} style={{ padding: '40px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <div>
+                <Title level={2} style={{ color: 'white', margin: '0 0 12px 0', fontSize: 36 }}>
+                  欢迎使用教学智能助手
+                </Title>
+                <div style={{ fontSize: 28, marginBottom: 16 }}>🎓</div>
+              </div>
+              <Paragraph style={{ color: 'rgba(255,255,255,0.95)', fontSize: 16, margin: 0, lineHeight: 1.8 }}>
+                专为大学教授设计的AI教学助手，基于教学设计理论和丰富的教学资源库，
+                帮助您轻松完成课程设计、教学大纲撰写和教学活动规划。
+              </Paragraph>
+              <div style={{ marginTop: 12 }}>
+                <Button 
+                  type="primary" 
+                  size="large" 
+                  style={{ marginRight: 12, height: 40, fontSize: 16 }}
+                  onClick={() => onNavigate && onNavigate('syllabus11')}
+                >
+                  开始创建课程大纲
+                </Button>
+                <Button 
+                  size="large" 
+                  style={{ background: 'rgba(255,255,255,0.25)', color: 'white', border: '1px solid rgba(255,255,255,0.5)', height: 40, fontSize: 16 }}
+                  onClick={() => onNavigate && onNavigate('guide')}
+                >
+                  查看使用指南
+                </Button>
+              </div>
+            </Space>
+          </Col>
+          
+          {/* 插画区域 */}
+          <Col xs={0} sm={0} md={12} style={{ padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <img 
+              src={heroIllustration.src} 
+              alt={heroIllustration.alt}
+              style={{
+                width: '100%',
+                height: 360,
+                objectFit: 'contain',
+                filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.2))',
+              }}
+            />
+          </Col>
+        </Row>
+      </div>
+      
 
       {/* 统计数据 */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
